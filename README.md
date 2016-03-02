@@ -1,3 +1,3 @@
 # ArcFeaturesToSocrata
 
-### Extracts Geodata from a ArcGis Feature Service and dumps the geodata onto Socrata
+### Extracts geodata from an ArcGis Feature Service and dumps the geodata onto Socrata
