@@ -124,21 +124,16 @@ class ArcFeatureToSocrata:
         print
         print dataset['tags']
         print
-        socrata_dataset = self.client.create(dataset['name'], description=dataset['description'], columns=dataset['socrataColumns'], tags=dataset['tags'], category=dataset['category'], new_backend=new_backend)
-        fourXFour = str(socrata_dataset['id'])
-        dataset['Dataset URL'] = self.dataset_base_url + fourXFour
-        dataset['fourXFour'] = fourXFour
-        print "4x4 "+ dataset['fourXFour']
-        #try:
-            #socrata_dataset = self.client.create(dataset['name'], description=dataset['description'], columns=dataset['socrataColumns'], tags=dataset['tags'], category=dataset['category'], new_backend=new_backend)
-            #fourXFour = str(socrata_dataset['id'])
-            #dataset['Dataset URL'] = self.dataset_base_url + fourXFour
-            #dataset['fourXFour'] = fourXFour
-            #print "4x4 "+ dataset['fourXFour']
-        #except:
-            #$dataset['Dataset URL'] = ''
-            #dataset['fourXFour'] = 'Error: did not create dataset'
-            #print "4x4 "+ dataset['fourXFour']
+        try:
+            socrata_dataset = self.client.create(dataset['name'], description=dataset['description'], columns=dataset['socrataColumns'], tags=dataset['tags'], category=dataset['category'], new_backend=new_backend)
+            fourXFour = str(socrata_dataset['id'])
+            dataset['Dataset URL'] = self.dataset_base_url + fourXFour
+            dataset['fourXFour'] = fourXFour
+            print "4x4 "+ dataset['fourXFour']
+        except:
+            dataset['Dataset URL'] = ''
+            dataset['fourXFour'] = 'Error: did not create dataset'
+            print "4x4 "+ dataset['fourXFour']
         return dataset
     
     def insertGeodataSet(self, dataset):
