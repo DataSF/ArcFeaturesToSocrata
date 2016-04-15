@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[764]:
+# In[618]:
 
 import re
 import csv
@@ -22,16 +22,67 @@ import json
 import time 
 
 
-# In[775]:
+# In[619]:
 
-class ArcFeatureToSocrata:
+def filterDictList( dictList, keysToKeep):
+    return  [ {key: x[key] for key in keysToKeep if key in x.keys() } for x in dictList]
+
+def filterDict(mydict, keysToKeep):
+    mydictKeys = mydict.keys()
+    return {key: mydict[key] for key in keysToKeep  if key in mydictKeys }
     
+def filterDictListOnKeyVal(dictlist, key, valuelist):
+    #filter list of dictionaries with matching values for a given key
+    return [dictio for dictio in dictlist if dictio[key] in valuelist]
+
+def date_handler(obj):
+    return obj.isoformat() if hasattr(obj, 'isoformat') else obj
+
+
+# In[620]:
+
+class ConfigItems:
     def __init__(self, inputdir, fieldConfigFile):
         self.inputdir = inputdir
         self.fieldConfigFile = fieldConfigFile
-        #self.clientConfigFile = clientConfigFile
-        self.configItems = self.getConfigs( self.inputdir, self.fieldConfigFile)
-        self.client = self.connectToSocrata(inputdir + self.configItems['socrata_client_config_fname'])
+        
+    def getConfigs(self):
+        configItems = 0
+        with open(self.inputdir + self.fieldConfigFile ,  'r') as stream:
+            try:
+                configItems = yaml.load(stream)
+            except yaml.YAMLError as exc:
+                print(exc)
+        return configItems
+
+
+# In[621]:
+
+class SocrataClient:
+    def __init__(self, inputdir, configItems):
+        self.inputdir = inputdir
+        self.configItems = configItems
+        
+    def connectToSocrata(self):
+        clientConfigFile = self.inputdir + self.configItems['socrata_client_config_fname']
+        with open(clientConfigFile,  'r') as stream:
+            try:
+                client_items = yaml.load(stream)
+                client = Socrata(client_items['url'],  client_items['app_token'], username=client_items['username'], password=base64.b64decode(client_items['password']))
+                return client
+            except yaml.YAMLError as exc:
+                print(exc)
+        return 0
+    
+
+
+# In[635]:
+
+class ArcFeatureToSocrata:
+    
+    def __init__(self, inputdir, configItems, client):
+        self.configItems = configItems
+        self.client = client
         self.field_documentation_field = self.configItems['field_documentation_field']
         self.feature_service_endpoint_field = self.configItems['feature_service_endpoint_field']
         self.layer_field = self.configItems['layer_field']
@@ -45,10 +96,13 @@ class ArcFeatureToSocrata:
         self.destination_attribute_field = self.configItems['destination_attribute_field']
         self.srid_projection = str(self.configItems['srid_projection'])
         self.dataset_base_url = self.configItems['dataset_base_url']
+        self.dataset_dev_phase = self.configItems['dataset_dev_phase_field']
     
     def makeDataSets(self):
         #load the publishing tracker
         schemaLayout, datasets = self.make_headers_and_rowobj(self.configItems['inputDataDir'] + self.configItems['pubtracker'])
+        for dataset in datasets:
+            dataset['devPhase'] = dataset[self.dataset_dev_phase]
         return datasets
     
     def getAttributesForDataSets(self):
@@ -117,13 +171,6 @@ class ArcFeatureToSocrata:
             new_backend = False
         else:
             new_backend = True
-       
-        print dataset['socrataColumns']
-        print 
-        print dataset['description']
-        print
-        print dataset['tags']
-        print
         try:
             socrata_dataset = self.client.create(dataset['name'], description=dataset['description'], columns=dataset['socrataColumns'], tags=dataset['tags'], category=dataset['category'], new_backend=new_backend)
             fourXFour = str(socrata_dataset['id'])
@@ -131,60 +178,64 @@ class ArcFeatureToSocrata:
             dataset['fourXFour'] = fourXFour
             print "4x4 "+ dataset['fourXFour']
         except:
+            print "*****ERROR*******"
+            print dataset
             dataset['Dataset URL'] = ''
             dataset['fourXFour'] = 'Error: did not create dataset'
             print "4x4 "+ dataset['fourXFour']
+            print "***************"
         return dataset
     
     def insertGeodataSet(self, dataset):
         insertDataSet = []
+        #keep track of the rows we are inserting
+        dataset['rowsInserted'] = 0
         try:
-            insertDataSet = self.getDataForSocrataInsert(dataset, dataset['columns'])
+            insertDataSet = self.getGeoDataFromArgisAsDictList(dataset, dataset['columns'])
         except:
             result = 'Error: could not get data'
-            dataset['result'] =  result
             return dataset
         #need to chunk up dataset so we dont get Read timed out errors
         if len(insertDataSet) > 1000 and (not(insertDataSet is None)):
-            results = []
             #chunk it
             insertChunks=[insertDataSet[x:x+1000] for x in xrange(0, len(insertDataSet), 1000)]
             #overwrite the dataset on the first insert
-            try:
+            try: 
                 result = self.client.replace(dataset['fourXFour'], insertChunks[0])
-                print result 
-                results.append(result)
+                print "First Chunk: Rows inserted: " + str(dataset['rowsInserted'])
+                dataset['rowsInserted'] =  int(result['Rows Created'])
             except:
                 result = 'Error: did not insert dataset chunk'
             for chunk in insertChunks[1:]:
                 try:
                     result = self.client.upsert(dataset['fourXFour'], chunk)
-                    print result
-                    results.append(result)
+                    dataset['rowsInserted'] = dataset['rowsInserted'] + int(result['Rows Created'])
+                    print "Additional Chunks: Rows inserted: " + str(dataset['rowsInserted'])
+                    time.sleep(1)
                 except:
                     result = 'Error: did not insert dataset chunk'
-            dataset['result'] =  results
-            print results
-        elif len(insertDataSet) > 0 and len(insertDataSet) < 1000:
-            print insertDataSet[0]
-            result = self.client.replace(dataset['fourXFour'], insertDataSet) 
+        elif len(insertDataSet) < 1000 and (not(insertDataSet is None)):
+            #print insertDataSet[0]
             try:
                 result = self.client.replace(dataset['fourXFour'], insertDataSet) 
-                dataset['result'] =  result
-                print dataset['result']
+                dataset['rowsInserted'] = dataset['rowsInserted'] + int(result['Rows Created'])
+                print "Rows inserted: " + str(dataset['rowsInserted'])
             except:
-                dataset['result'] = 'Error: did not insert dataset'
-                print "result: "+ dataset['result']
+                print 'Error: did not insert dataset'
         return dataset
     
-    def getDataForSocrataInsert(self, dataset, columns):
+    def getGeoDataFromArgisAsDictList(self, dataset, columns):
         #get a list of all the argis source columns
         argisSourceColumns =  list(itertools.chain(*[column.values() for column in filterDictList(columns, [ self.source_attribute_field]) ]))
         argisSourceColumnDataTypes =  filterDictList(columns, [ self.source_attribute_field, 'fieldName', 'dataTypeName'])
         datasetOut = []
         layer = dataset[self.layer_field]
         try: 
-            featureService = arcgis.ArcGIS( dataset[ self.feature_service_endpoint_field] )
+            #important to note: need to have the right OBJECTID for the georest service for the ArcGIS class for it
+            #properly query the server. the ArcGIS class has an optional param, object_id_field='OBJECTID_1'
+            #default id field is OBJECTID.
+            #arcgis.ArcGIS( dataset[ self.feature_service_endpoint_field], object_id_field='OBJECTID_1' )
+            featureService = arcgis.ArcGIS( dataset[ self.feature_service_endpoint_field])
             print dataset[self.feature_service_endpoint_field]
         except:
             print "Error: Something went wrong: Couldnt connect to feature service"
@@ -241,50 +292,35 @@ class ArcFeatureToSocrata:
                         #dataRow[columnLookup['fieldName']] = json.dumps( row[key], default=date_handler)
                 else:
                     dataRow[columnLookup['fieldName']] = None
-            elif columnLookup['dataTypeName'] == 'text':
-                try:
-                    dataRow[columnLookup['fieldName']] = inflection.titleize(row[key].lower())
-                except:
-                    dataRow[columnLookup['fieldName']]  = row[key]
+            #elif columnLookup['dataTypeName'] == 'text':
+               # try:
+            #     dataRow[columnLookup['fieldName']] = inflection.titleize(row[key].lower())
+               # except:
+                #    dataRow[columnLookup['fieldName']]  = row[key]
             else:
                 dataRow[columnLookup['fieldName']] = row[key]
         return dataRow
     
-    @staticmethod
-    def formatGeodata( geom):
+    def formatGeodata(self, geom):
         if not(geom is None):
             if geom['type'] == 'Point':
                 geom =[str(x) for x in geom['coordinates']]
-                geom = "(" + ",".join(geom) + ")"
-                return geom
+                if len(geom) == 2:
+                    #switch the lat and long because socrata does lat, lon instead of typical lon,lat on location type
+                    geom = [geom[1], geom[0]]
+                    geom = "(" + ",".join(geom) + ")"
+                    return geom
+            elif geom['type'] == 'Polygon':
+                    return geom
             else:
-                geom['type'] = self.mapEsriToSocrata(geom['type'])
+                geotype = geom['type'].strip()
+                geom['type'] = self.mapEsriToSocrata(geotype)
                 if geom['type'] == 'Line':
                     geom['coordinates'] = geom['coordinates'][0]
                     geom['type'] = 'LineString'
-                return geom
+                    return geom
         return geom
-    
-    @staticmethod
-    def getConfigs( inputdir, fieldConfigFile):
-        fieldItems = 0
-        with open(inputdir + fieldConfigFile ,  'r') as stream:
-            try:
-                fieldItems = yaml.load(stream)
-            except yaml.YAMLError as exc:
-                print(exc)
-        return fieldItems
-    
-    @staticmethod
-    def connectToSocrata( clientConfigFile):
-        with open(clientConfigFile,  'r') as stream:
-            try:
-                client_items = yaml.load(stream)
-                client = Socrata(client_items['url'],  client_items['app_token'], username=client_items['username'], password=base64.b64decode(client_items['password']))
-                return client
-            except yaml.YAMLError as exc:
-                print(exc)
-        return 0
+
     
     @staticmethod
     def make_headers_and_rowobj( fname, keysToKeep=None):
@@ -313,13 +349,17 @@ class ArcFeatureToSocrata:
             return False
         
     @staticmethod
-    def mapEsriToSocrata( val):
+    def mapEsriToSocrata(val):
         dataTypesDict = { 'esriFieldTypeDate': 'date', 'esriGeometryPoint':'location', 
                           'esriGeometryPolygon':'polygon', 'esriFieldTypeString':'text', 
                           'esriFieldTypeDouble':'number',  'esriGeometryPointLine':'Line' ,
                           'esriFieldTypeOID': 'number', 'esriFieldTypeInteger': 'number', 
                           'esriFieldTypeSmallInteger': 'number', 'esriGeometryPolyline': 'Line', 
-                          'MultiLineString': 'Line'}
+                          'MultiLineString': 'Line', 'Polygon': 'polygon',
+                        'esriFieldTypeSingle': 'number', 'esriFieldTypeSmallInteger': 'number',
+                         'esriFieldTypeGUID': 'text', 'esriFieldTypeGlobalID': 'text', 
+                         'esriGeometryPolyline': 'Line', 'MultiLineString': 'Line'
+                        }
         dataTypesDictKeys = dataTypesDict.keys()
         if val in dataTypesDictKeys:
             return dataTypesDict[val]
@@ -338,60 +378,52 @@ class ArcFeatureToSocrata:
         return argisFieldsList, description, geometryType
 
 
-# In[776]:
+# In[639]:
 
-def filterDictList( dictList, keysToKeep):
-    return  [ {key: x[key] for key in keysToKeep if key in x.keys() } for x in dictList]
-
-def filterDict(mydict, keysToKeep):
-    mydictKeys = mydict.keys()
-    return {key: mydict[key] for key in keysToKeep  if key in mydictKeys }
-    
-def filterDictListOnKeyVal(dictlist, key, valuelist):
-    #filter list of dictionaries with matching values for a given key
-    return [dictio for dictio in dictlist if dictio[key] in valuelist]
-
-def date_handler(obj):
-    return obj.isoformat() if hasattr(obj, 'isoformat') else obj
-
-
-# In[777]:
 
 def main():
     inputdir = '/home/ubuntu/workspace/mta_test/'
     fieldConfigFile = 'fieldConfig.yaml'
-    aFTS = ArcFeatureToSocrata(inputdir, fieldConfigFile)
+    cI =  ConfigItems(inputdir ,fieldConfigFile  )
+    configItems = cI.getConfigs()
+    sc = SocrataClient(inputdir, configItems)
+    client = sc.connectToSocrata()
+    aFTS = ArcFeatureToSocrata(inputdir, configItems, client)
     datasets = aFTS.makeDataSets()
     datasetsAttributes = aFTS.getAttributesForDataSets()
-    finalOutputStatus = []
-    for dataset in datasets:  
-        print "*****"
-        dataset = aFTS.makeDataSetSchemaForSocrata(dataset, datasetsAttributes)
-        if 'socrataColumns' in dataset.keys():
-            print "******"
-            print dataset['name']
-            print
-            print dataset['geotype']
-            print 
-            if (len(dataset['fourXFour']) == 0) and (dataset['Field Documentation'] == 'Draft'):
-                #insertDataSet = aFTS.getDataForSocrataInsert(dataset, dataset['columns'])
-                #print insertDataSet[0]
+    for dataset in datasets:
+        if  dataset['devPhase'] == 'Ready for Development':
+            dataset = aFTS.makeDataSetSchemaForSocrata(dataset, datasetsAttributes)
+            if (  (len(dataset['fourXFour']) > 2 ) and ('socrataColumns' in dataset.keys())):
+                print "****inserting dataset:**************"
+                print dataset['name']
+                print
+                print dataset['geotype']
+                print 
+                dataset = aFTS.insertGeodataSet(dataset)
+            elif (  (len(dataset['fourXFour']) == 0 ) and ('socrataColumns' in dataset.keys())):
+                print "****creating dataset:**************"
+                print dataset['name']
+                print
+                print dataset['geotype']
+                print 
                 dataset = aFTS.createGeodataSet(dataset)
+                print "4x4:" + dataset['fourXFour']
+                print 
                 if len(dataset['fourXFour']) >2 :
                     #need to sleep so we can give socrata a chance to update itself
                     time.sleep(5)
-                    aFTS.dataset = aFTS.insertGeodataSet(dataset) 
-            elif (dataset['Field Documentation'] == 'Draft') and  (len(dataset['fourXFour']) > 0):
-                dataset = aFTS.insertGeodataSet(client, dataset)
-                print dataset
-        else:
-            dataset['fourXFour'] = 'Error: did not create dataset'
-        finalOutputStatus.append(dataset)
+                    dataset = aFTS.insertGeodataSet(dataset)
+    client.close()
 
 
-# In[778]:
+# In[861]:
 
 if __name__ == '__main__' and '__file__' in globals():
     main()
 
+
+# In[862]:
+
+#main()
 

@@ -15,3 +15,4 @@ source_attribute_field: SourceAttribute
 destination_attribute_field: DestinationAttribute
 srid_projection: 4326
 dataset_base_url: https://data.sfgov.org/resource/
+dataset_dev_phase_field: Open Dataset
