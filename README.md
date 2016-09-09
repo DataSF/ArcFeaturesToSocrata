@@ -17,5 +17,5 @@
 * Important to note, you will need to provide a csv that outlines the geodatasets that your are trying to migrate/update. See the file configs/sample_csv_geodataset_list.csv
 * You will need to define which fields from the rest api you want to keep and how you will rename them. Sees the the file, configs/MTA_FieldDocumentation_AttributeCompleteList.csv for an example
 * this library can be called through command line arguements. Args are -u -> update schedule for dataset, -c config file name, -d directory of where to to find the config files. 
-* Usage example: python  /home/ubuntu/mtaGeo/pydev/ArcPyToSocrataUpdateLoad.py -u weekly -c fieldConfig_MTA.yaml -d /home/ubuntu/mtaGeo/configs/ > /home/ubuntu/mtaGeo/logs/weeklyGeo_log.txt
+* 'Usage example: python  /home/ubuntu/mtaGeo/pydev/ArcPyToSocrataUpdateLoad.py -u weekly -c fieldConfig_MTA.yaml -d /home/ubuntu/mtaGeo/configs/ > /home/ubuntu/mtaGeo/logs/weeklyGeo_log.txt`
 
