@@ -80,11 +80,10 @@ for dataset in datasets:
         print dataset['geotype']
         print 
         if "row_id" not in dataset.keys():
-                dataset['row_id'] = ''
+               dataset['row_id'] = ''
         if len(dataset[configItems['fourXFour']]) == 9:
-            print "****inserting dataset:**************"
-            dataset = aFTS.postGeoData( dataset, scrud)
-            finshedDatasets.append(dataset)
+           dataset = aFTS.postGeoData( dataset, scrud)
+           finshedDatasets.append(dataset)
 
 
 print "****************FINAL RESULTS************************************"
