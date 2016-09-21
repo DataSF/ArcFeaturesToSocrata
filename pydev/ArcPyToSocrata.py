@@ -85,7 +85,7 @@ class ArcFeatureToSocrata:
         urlbase = dataset[self.feature_service_endpoint_field]
         layer = dataset[self.layer_field]
         argisFields = self.getArgisDataType(urlbase, layer, query)
-        print urlbase +"/" +layer
+        #print urlbase +"/" +layer
         if argisFields:
             dataset['category'] = dataset[self.category_field]
             dataset['tags'] = dataset[self.tags_field].split(';')
@@ -180,7 +180,8 @@ class ArcFeatureToSocrata:
                 print "******ERROR: Something went wrong: Couldnt connect to feature service***********"
         try:
             shapes = featureService.get(layer, fields=argisSourceColumns, srid=self.srid_projection)
-            for shape in shapes['features']:
+            print "number of shps " + str(len(shapes['features']))
+	    for shape in shapes['features']:
                 try:
                     row = filterDict(shape['properties'] , argisSourceColumns)
                 except:
@@ -202,18 +203,22 @@ class ArcFeatureToSocrata:
                 print featureService.get_json(layer, count_only=True)
             except: 
                 print "couldn't get attributes as json count"
-        return datasetOut
+        print "dataset row cnt: " + str(len(datasetOut))
+	return datasetOut
     
     @staticmethod
     def columnLookup( row, dataRow, argisSourceColumnDataTypes ):
         for key,val in row.iteritems():
+	    #print key, val
             columnLookup =  (item for item in argisSourceColumnDataTypes if item["SourceAttribute"] == key).next()
-            if columnLookup['dataTypeName'] == 'date':
+	    if columnLookup['dataTypeName'] == 'date':
                 if not( row[key] is None):
                     row[key] = datetime.datetime.fromtimestamp(row[key]/1000.0)
-                    try:
+		    try:
                         row[key] =   str(row[key].strftime("%m/%d/%Y"))
+			dataRow[columnLookup['fieldName']] = row[key]
                     except ValueError:
+			print "could not handle date field"
                         row[key] = None
                         dataRow[columnLookup['fieldName']]  = row[key]
                         #dataRow[columnLookup['fieldName']] = json.dumps( row[key], default=date_handler)
@@ -312,7 +317,6 @@ class ArcFeatureToSocrata:
     def postGeoData(self, dataset, socrataCRUD):
         try:
             geoDictList = self.getGeoDataFromArgisAsDictList(dataset, dataset['columns'])
-            #print geoDictList[0]
         except:
             result = 'Error: could not get data'
             return dataset
