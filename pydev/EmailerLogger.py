@@ -58,9 +58,11 @@ class pyLogger:
         #open a file to clear log
         fo = open(self.logfile_fullpath, "w")
         fo.close
-        logging.basicConfig(level=logging.DEBUG, filename=self.logfile_fullpath, format='%(asctime)s %(levelname)s %(name)s %(message)s')
+        logging.basicConfig(level=logging.WARN, filename=self.logfile_fullpath, filemode='w')
         logger=logging.getLogger(__name__)
-
+	#formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+	#logger = logger.setFormatter(formatter)
+	return logger
 
 # In[ ]:
 

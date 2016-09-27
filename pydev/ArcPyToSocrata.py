@@ -215,7 +215,7 @@ class ArcFeatureToSocrata:
                 if not( row[key] is None):
                     row[key] = datetime.datetime.fromtimestamp(row[key]/1000.0)
 		    try:
-                        row[key] =   str(row[key].strftime("%m/%d/%Y"))
+                        row[key] =   row[key].strftime("%Y-%m-%d")
 			dataRow[columnLookup['fieldName']] = row[key]
                     except ValueError:
 			print "could not handle date field"
@@ -317,8 +317,8 @@ class ArcFeatureToSocrata:
     def postGeoData(self, dataset, socrataCRUD):
         try:
             geoDictList = self.getGeoDataFromArgisAsDictList(dataset, dataset['columns'])
-        except:
-            result = 'Error: could not get data'
+        except Exception, e:
+	    print e
             return dataset
         dataset[self.shp_records] = len(geoDictList)
         dataset[self.rowsInserted] = 0

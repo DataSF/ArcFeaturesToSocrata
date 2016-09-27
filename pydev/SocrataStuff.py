@@ -60,14 +60,11 @@ class SocrataClient:
                 print(exc)
         return 0
 
-
-# In[278]:
-
 class SocrataCRUD:
     
-    def __init__(self, client, clientItems, configItems):
+   def __init__(self, client, clientItems, configItems,logger):
         self.client = client
-        self.chunkSize = 200
+        self.chunkSize = 100
         self.geotype = configItems['geotype_field']
         self.row_id = configItems['row_id_field']
         self.name = configItems['dataset_name_field']
@@ -78,10 +75,11 @@ class SocrataCRUD:
         self.shp_records = configItems['src_records_cnt_field']
         self.clientItems = clientItems
         self.isLoaded = configItems['isLoaded']
-
-    @retry( tries=5, delay=1, backoff=2)   
-    def createGeodataSet(self, dataset, cols):
-        if dataset[self.geotype] == 'Point':
+	_logger = logger
+   
+   @retry( tries=5, delay=1, backoff=2)  
+   def createGeodataSet(self, dataset, cols):
+   	if dataset[self.geotype] == 'Point':
             new_backend = False
         else:
             new_backend = True
@@ -105,9 +103,10 @@ class SocrataCRUD:
             print "***************"
         del dataset['tags']
         return dataset
-    
-    def insertGeodataSet(self, dataset, insertDataSet):
-        insertChunks = self.makeChunks(insertDataSet)
+
+   @retry(tries=3, delay=1, backoff=1, jitter=0.25)
+   def insertGeodataSet(self, dataset, insertDataSet):
+	insertChunks = self.makeChunks(insertDataSet)
         #overwrite the dataset on the first insert chunk[0] if there is no row id
         if dataset[self.rowsInserted] == 0 and dataset[self.row_id ] == '':
             rejectedChunk = self.replaceDataSet(dataset, insertChunks[0])
@@ -118,41 +117,44 @@ class SocrataCRUD:
             print "upserting..."
             for chunk in insertChunks:
                 rejectedChunk = self.insertData(dataset, chunk)
-        return dataset
+	return dataset
     
     
-    @retry( tries=10, delay=1, backoff=2)
-    def replaceDataSet(self, dataset, chunk):
+   @retry( tries=3, delay=2, backoff=2, jitter=0.50)
+   def replaceDataSet(self, dataset, chunk):
         result = self.client.replace( dataset[self.fourXFour], chunk ) 
         dataset[self.rowsInserted] = dataset[self.rowsInserted] + int(result['Rows Created'])
         time.sleep(0.25)
+	
         
         
-    @retry( tries=10, delay=1, backoff=2)
-    def insertData(self, dataset, chunk):
+   @retry( tries=10, delay=1, backoff=1, jitter=0.2)
+   def insertData(self, dataset, chunk):
         result = self.client.upsert(dataset[self.fourXFour], chunk) 
         dataset[self.rowsInserted] = dataset[self.rowsInserted] + int(result['Rows Created'])
-        time.sleep(0.25)
+        time.sleep(0.20)
        
 
-    def makeChunks(self, insertDataSet):
+   def makeChunks(self, insertDataSet):
         return [insertDataSet[x:x+ self.chunkSize] for x in xrange(0, len(insertDataSet), self.chunkSize)]
     
     
-    def postDataToSocrata(self, dataset, insertDataSet ):
+   def postDataToSocrata(self, dataset, insertDataSet):
         if dataset[self.fourXFour]!= 0:
 	    try:
             	dataset = self.insertGeodataSet(dataset, insertDataSet)
 	    	dataset = self.checkCompleted(dataset)
-	    except:
-		dataset[self.rowsInserted] = -1
+	    except Exception as ex:
+		logging.exception("Something awful happened!")
+		#print e
+		print "rows inserted: " + str(dataset[self.rowsInserted])
 		print "something went wrong! Could not upload dataset!!"
 	    	dataset[self.isLoaded] = 'failed'	
         else: 
             print "dataset does not exist"
         return dataset
     
-    def checkCompleted(self, dataset):
+   def checkCompleted(self, dataset):
         if dataset[self.rowsInserted] == dataset[self.shp_records]:
             dataset[self.isLoaded] = 'success'
         else:
@@ -165,7 +167,7 @@ class SocrataCRUD:
             print "data insert success!" + " Loaded " + str(dataset[self.rowsInserted]) + "rows!"
         return dataset
     
-    def getRowCnt(self, dataset):
+   def getRowCnt(self, dataset):
         time.sleep(1)
         qry = '?$select=count(*)'
         qry = "https://"+ self.clientItems['url']+"/resource/" +dataset[self.fourXFour]+ ".json" + qry
